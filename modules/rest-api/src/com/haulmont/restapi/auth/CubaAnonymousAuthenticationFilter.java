@@ -56,8 +56,8 @@ public class CubaAnonymousAuthenticationFilter implements Filter {
                 SecurityContextHolder.getContext().setAuthentication(anonymousAuthenticationToken);
                 AppContext.setSecurityContext(new SecurityContext(anonymousSessionId));
             } else {
-                log.debug("SecurityContextHolder not populated with cuba anonymous token, as it already contained: '"
-                        + SecurityContextHolder.getContext().getAuthentication() + "'");
+                log.debug("SecurityContextHolder not populated with cuba anonymous token, as it already contained: '{}'",
+                        SecurityContextHolder.getContext().getAuthentication());
             }
         } else {
             log.trace("Anonymous access for CUBA REST API is disabled");

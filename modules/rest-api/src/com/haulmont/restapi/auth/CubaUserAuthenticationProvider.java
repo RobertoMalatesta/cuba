@@ -23,6 +23,7 @@ import com.haulmont.cuba.core.sys.SecurityContext;
 import com.haulmont.cuba.security.app.LoginService;
 import com.haulmont.cuba.security.global.LoginException;
 import com.haulmont.cuba.security.global.UserSession;
+import com.haulmont.restapi.auth.CubaExternalAuthenticationFilter.ExternalAuthenticationToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AuthenticationProvider;
@@ -54,14 +55,15 @@ public class CubaUserAuthenticationProvider implements AuthenticationProvider, S
 
     @Override
     public Authentication authenticate(Authentication authentication) throws AuthenticationException {
+        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.currentRequestAttributes();
+        HttpServletRequest request = attributes.getRequest();
+
+        String ipAddress = request.getRemoteAddr();
+
         if (authentication instanceof UsernamePasswordAuthenticationToken) {
             UsernamePasswordAuthenticationToken token = (UsernamePasswordAuthenticationToken) authentication;
 
-            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.currentRequestAttributes();
-            HttpServletRequest request = attributes.getRequest();
-
             String login = (String) token.getPrincipal();
-            String ipAddress = request.getRemoteAddr();
 
             checkBruteForceProtection(login, ipAddress);
 
@@ -73,6 +75,29 @@ public class CubaUserAuthenticationProvider implements AuthenticationProvider, S
                 AppContext.setSecurityContext(new SecurityContext(session));
                 UsernamePasswordAuthenticationToken result = new UsernamePasswordAuthenticationToken(authentication.getPrincipal(),
                         authentication.getCredentials(), getRoleUserAuthorities());
+                Map<String, String> details = (Map<String, String>) authentication.getDetails();
+                details.put("sessionId", session.getId().toString());
+                result.setDetails(details);
+                return result;
+            } catch (LoginException e) {
+                log.error("REST API authentication failed: {} {}", login, ipAddress);
+                throw new BadCredentialsException("Bad credentials");
+            }
+        }
+
+        if (authentication instanceof ExternalAuthenticationToken) {
+            ExternalAuthenticationToken token = (ExternalAuthenticationToken) authentication;
+
+            String login = (String) token.getPrincipal();
+            try {
+                UserSession session = loginService.login(login, passwordEncryption.getPlainHash((String) token.getCredentials()), request.getLocale());
+                if (!session.isSpecificPermitted("cuba.restApi.enabled")) {
+                    throw new BadCredentialsException("User is not allowed to use the REST API");
+                }
+                AppContext.setSecurityContext(new SecurityContext(session));
+
+                ExternalAuthenticationToken result = new ExternalAuthenticationToken(login, getRoleUserAuthorities());
+
                 Map<String, String> details = (Map<String, String>) authentication.getDetails();
                 details.put("sessionId", session.getId().toString());
                 result.setDetails(details);
